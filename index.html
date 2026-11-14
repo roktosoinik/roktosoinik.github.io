@@ -30,7 +30,7 @@
   var PUB_KEYS = ['bloodGroup', 'district', 'upazila', 'donationCount', 'lastDonation', 'gapDays', 'adultOn', 'age', 'paused', 'pauseReason', 'pausedAt', 'suspended', 'createdAt', 'demo'];
 
   var F = null, app = null, auth = null, fs = null, authDone = null;
-  var state = { uid: null, email: '', member: false, admin: false };
+  var state = { uid: null, email: '', member: false, admin: false, err: '' };
 
   function loadSdk() {
     return Promise.all([import(BASE + 'firebase-app.js'), import(BASE + 'firebase-auth.js'), import(BASE + 'firebase-firestore.js')]).then(function (m) {
@@ -51,13 +51,13 @@
   // Resolves once the saved sign-in (if any) is known; a visitor with none gets an anonymous id.
   function start() {
     if (authDone) return authDone;
-    authDone = loadSdk().then(function () {
+    authDone = loadSdk().catch(function (e) { state.err = 'sdk: ' + ((e && (e.code || e.message)) || e); throw e; }).then(function () {
       return new Promise(function (resolve) {
         var first = true;
         F.auth.onAuthStateChanged(auth, function (u) {
           if (first) {
             first = false;
-            if (!u) { F.auth.signInAnonymously(auth).then(function (c) { setUser(c.user); resolve(); }, function () { setUser(null); resolve(); }); return; }
+            if (!u) { F.auth.signInAnonymously(auth).then(function (c) { setUser(c.user); resolve(); }, function (e) { state.err = 'anon: ' + ((e && (e.code || e.message)) || e); setUser(null); resolve(); }); return; }
           }
           setUser(u); resolve();
         });
@@ -86,6 +86,7 @@
 
   window.RS_FB = {
     ready: function () { return start(); },
+    err: function () { return state.err ? ' [' + state.err + ']' : ''; },
     uid: function () { return state.uid; },
     isMember: function () { return state.member; },
     isAdmin: function () { return state.admin; },
@@ -1767,7 +1768,7 @@ var RSCrypto = (function () {
     wireForm('r-', {
       mode: 'register',
       save: function (v) {
-        if (!db || !uid) { var e = new Error('noauth'); e.userMessage = 'নিবন্ধন করতে ইন্টারনেট সংযোগ দেখে পেজটি আবার খুলুন।'; return Promise.reject(e); }
+        if (!db || !uid) { var e = new Error('noauth'); e.userMessage = 'নিবন্ধন করতে ইন্টারনেট সংযোগ দেখে পেজটি আবার খুলুন।' + (window.RS_FB && RS_FB.err ? RS_FB.err() : ''); return Promise.reject(e); }
         if (canWrite === false) { var e2 = new Error('nowrite'); e2.userMessage = 'এই পেজে তথ্য লিখতে আপনার অনুমতি নেই। পেজের মালিকের কাছে লেখার অনুমতি চান।'; return Promise.reject(e2); }
         if (window.RS_FB) {
           return RS_FB.register(v.phone, v.pin).then(function (nu) { uid = nu; return db.doc('donors/' + nu).get(); }).then(function (s) {
